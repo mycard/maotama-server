@@ -1,6 +1,6 @@
 'use strict';
 const WebSocketServer = require("websocket").server;
-const http = require("http");
+const https = require("https");
 const dgram = require("dgram");
 
 const address = process.env['ADDRESS'];
@@ -8,7 +8,12 @@ if (!address) {
     throw "Set IP address in environment variable ADDRESS"
 }
 
-let http_server = http.createServer((request, response) => {
+const options = {
+    key: fs.readFileSync('cert/privkey.pem'),
+    cert: fs.readFileSync('cert/fullchain.pem')
+};
+
+let http_server = https.createServer(options, (request, response) => {
     response.writeHead(400);
     response.end()
 }).listen(10800);
