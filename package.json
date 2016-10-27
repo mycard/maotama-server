@@ -1,12 +1,8 @@
 {
   "name": "maotama-server",
-  "version": "1.0.0",
-  "description": "",
-  "main": "maotama.js",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/mycard/maotama-server.git"
-  },
+  "version": "3.0.0",
+  "description": "maotama server",
+  "repository": "github:mycard/maotama-server",
   "author": "zh99998 <zh99998@gmail.com>",
   "license": "AGPL-3.0",
   "bugs": {
@@ -14,6 +10,6 @@
   },
   "homepage": "https://github.com/mycard/maotama-server#readme",
   "dependencies": {
-    "websocket": "^1.0.22"
+    "websocket": "latest"
   }
 }
