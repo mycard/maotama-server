@@ -76,17 +76,19 @@ websocket_server.on("connect", (connection) => {
     });
     // 如果 websocket 连接已经关闭，并且2分钟没有通讯，就释放跟这个 websocket 连接相关的资源
     connection.on('close', () => {
+        console.log('websocket connection close');
         alive = true;
         let id = setInterval(()=> {
             if (alive) {
                 alive = false
             } else {
+                console.log('close server and client udp');
                 server.close();
-                for (let client of clients) {
+                for (let [id, client] of clients) {
                     client.close();
                 }
                 clearInterval(id);
             }
-        }, 120000);
+        }, 1200);
     })
 });
