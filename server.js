@@ -2,6 +2,7 @@
 const WebSocketServer = require("websocket").server;
 const https = require("https");
 const dgram = require("dgram");
+const fs = require('fs');
 
 const address = process.env['ADDRESS'];
 if (!address) {
