@@ -1,4 +1,4 @@
-FROM node
+FROM node:12-buster-slim
 
 RUN mkdir -p /usr/src/app
 WORKDIR /usr/src/app
