@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -12,17 +13,104 @@ import (
 
 var IP = os.Getenv("ADDRESS")
 
-func transfer(local *net.UDPConn, remote *net.UDPConn, remotAddr *net.UDPAddr) {
+// funcs from shitama
+
+func UDPAddrToSockAddr(addr *net.UDPAddr) []byte {
+
+	buf := make([]byte, 8)
+
+	binary.BigEndian.PutUint16(buf[:2], 0x200)
+	binary.BigEndian.PutUint16(buf[2:4], uint16(addr.Port))
+	copy(buf[4:8], addr.IP[len(addr.IP)-4:])
+
+	return buf
+
+}
+
+func SockAddrToUDPAddr(buf []byte) *net.UDPAddr {
+
+	addr := new(net.UDPAddr)
+	addr.IP = make([]byte, 16)
+	addr.IP[10] = 255
+	addr.IP[11] = 255
+	copy(addr.IP[len(addr.IP)-4:], buf[4:8])
+	addr.Port = int(binary.BigEndian.Uint16(buf[2:4]))
+
+	return addr
+
+}
+
+func PackData(addr *net.UDPAddr, data []byte) []byte {
+
+	buf := make([]byte, len(data)+6)
+
+	copy(buf[:4], addr.IP[len(addr.IP)-4:])
+	binary.BigEndian.PutUint16(buf[4:6], uint16(addr.Port))
+	copy(buf[6:], data)
+
+	return buf
+
+}
+
+func UnpackData(buf []byte) (addr *net.UDPAddr, data []byte) {
+
+	addr = new(net.UDPAddr)
+	addr.IP = make([]byte, 16)
+	addr.IP[10] = 255
+	addr.IP[11] = 255
+	copy(addr.IP[len(addr.IP)-4:], buf[:4])
+	addr.Port = int(binary.BigEndian.Uint16(buf[4:6]))
+
+	data = make([]byte, len(buf)-6)
+	copy(data, buf[6:])
+	return addr, data
+
+}
+
+func UDPAddrToSockAddr2(addr *net.UDPAddr, outBuf []byte) []byte {
+
+	binary.BigEndian.PutUint16(outBuf[:2], 0x200)
+	binary.BigEndian.PutUint16(outBuf[2:4], uint16(addr.Port))
+	copy(outBuf[4:8], addr.IP[len(addr.IP)-4:])
+
+	return outBuf
+
+}
+
+func PackData2(addr *net.UDPAddr, data []byte, outBuf []byte) []byte {
+
+	copy(outBuf[:4], addr.IP[len(addr.IP)-4:])
+	binary.BigEndian.PutUint16(outBuf[4:6], uint16(addr.Port))
+	copy(outBuf[6:], data)
+
+	return outBuf
+
+}
+
+func UnpackData2(buf []byte) (addr *net.UDPAddr, data []byte) {
+
+	addr = new(net.UDPAddr)
+	addr.IP = make([]byte, 16)
+	addr.IP[10] = 255
+	addr.IP[11] = 255
+	copy(addr.IP[len(addr.IP)-4:], buf[:4])
+	addr.Port = int(binary.BigEndian.Uint16(buf[4:6]))
+
+	return addr, buf[6:]
+
+}
+
+func transferGuestTrafficToHost(client *net.UDPConn, server *net.UDPConn, clientAddr *net.UDPAddr, serverAddr *net.UDPAddr) {
 	buffer := make([]byte, 2048)
-	for {
-		length, _, _ := local.ReadFromUDP(buffer)
-		remote.WriteToUDP(buffer[:length], remotAddr)
+	for { // guest send to host
+		length, _, _ := client.ReadFromUDP(buffer)
+		server.WriteToUDP(buffer[:length], serverAddr)
 	}
 }
-func serverTransfer(client *net.UDPConn, remoteAddr *net.UDPAddr, channel chan []byte) {
-	for {
+func transferHostTrafficToGuest(client *net.UDPConn, server *net.UDPConn, clientAddr *net.UDPAddr, serverAddr *net.UDPAddr, channel chan []byte) {
+	for { // host send to guest
 		message := <-channel
-		client.WriteToUDP(message, remoteAddr)
+		client.WriteToUDP(message, clientAddr)
 	}
 }
 func listenUDP(ws *websocket.Conn) {
@@ -31,14 +119,14 @@ func listenUDP(ws *websocket.Conn) {
 		log.Println(err)
 		return
 	}
-	clients := make(map[string]chan []byte)
+	serverChannelList := make(map[string]chan []byte)
 
 	reply := fmt.Sprintf("LISTEN %s:%d", IP, server.LocalAddr().(*net.UDPAddr).Port)
 	ws.Write([]byte(reply))
 	for {
 		message := make([]byte, 2048)
-		length, clientAddr, _ := server.ReadFromUDP(message)
-		channel, ok := clients[clientAddr.String()]
+		length, serverAddr, _ := server.ReadFromUDP(message)
+		channel, ok := serverChannelList[serverAddr.String()]
 		if !ok {
 			client, err := net.ListenUDP("udp", nil)
 			if err != nil {
@@ -47,14 +135,14 @@ func listenUDP(ws *websocket.Conn) {
 			}
 			reply = fmt.Sprintf("CONNECT %s:%d", IP, client.LocalAddr().(*net.UDPAddr).Port)
 			ws.Write([]byte(reply))
-			_, remoteAddr, _ := client.ReadFromUDP(make([]byte, 2048))
+			_, clientAddr, _ := client.ReadFromUDP(make([]byte, 2048))
 			reply = fmt.Sprintf("CONNECTED %s:%d", IP, client.LocalAddr().(*net.UDPAddr).Port)
 			ws.Write([]byte(reply))
-			client.WriteToUDP(message[:length], remoteAddr)
-			go transfer(client, server, clientAddr)
+			client.WriteToUDP(message[:length], clientAddr)
+			go transferGuestTrafficToHost(client, server, clientAddr, serverAddr) // guest send to host
 			channel := make(chan []byte)
-			clients[clientAddr.String()] = channel
-			go serverTransfer(client, remoteAddr, channel)
+			serverChannelList[serverAddr.String()] = channel
+			go transferHostTrafficToGuest(client, server, clientAddr, serverAddr, channel) // host send to guest
 		} else {
 			channel <- message[:length]
 		}
