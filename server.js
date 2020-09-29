@@ -27,7 +27,7 @@ websocket_server.on("connect", (connection) => {
     let clients = new Map(); //<-- server.ip:address -> client -->
     let alive = false;
     server.bind({}, () => {
-        connection.send(`LISTEN: ${address}:${server.address().port}`);
+        connection.send(`LISTEN ${address}:${server.address().port}`);
     });
     server.on('message', (message, client_remote)=> {
         let client_id = `${client_remote.address}:${client_remote.port}`;
@@ -47,7 +47,7 @@ websocket_server.on("connect", (connection) => {
             clients.set(client_id, client);
             client.buffers = [message];
             client.bind({}, ()=> {
-                connection.send(`CONNECT: ${address}:${client.address().port}`);
+                connection.send(`CONNECT ${address}:${client.address().port}`);
             });
             client.on('message', (message, server_remote)=> {
                 alive = true;
@@ -56,7 +56,7 @@ websocket_server.on("connect", (connection) => {
                     server.send(message, client_remote.port, client_remote.address)
                 } else {
                     // 刚刚打洞成功，这个是打洞报文
-                    connection.send(`CONNECTED: ${address}:${client.address().port}`);
+                    connection.send(`CONNECTED ${address}:${client.address().port}`);
                     client.remote = server_remote;
                     for (let message of client.buffers) {
                         client.send(message, server_remote.port, server_remote.address);
