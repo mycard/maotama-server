@@ -26,8 +26,9 @@ websocket_server.on("connect", (connection) => {
     let server = dgram.createSocket('udp4');
     let clients = new Map(); //<-- server.ip:address -> client -->
     let alive = false;
-    server.bind({}, ()=> {
+    server.bind({}, () => {
         connection.send(`LISTEN: ${address}:${server.address().port}`);
+    });
     server.on('message', (message, client_remote)=> {
         let client_id = `${client_remote.address}:${client_remote.port}`;
         let client = clients.get(client_id);
