@@ -100,49 +100,49 @@ func UnpackData2(buf []byte) (addr *net.UDPAddr, data []byte) {
 
 }
 
-func transferGuestTrafficToHost(client *net.UDPConn, server *net.UDPConn, clientAddr *net.UDPAddr, serverAddr *net.UDPAddr) {
+func transferHostTrafficToGuest(host *net.UDPConn, guest *net.UDPConn, hostAddr *net.UDPAddr, guestAddr *net.UDPAddr) {
 	buffer := make([]byte, 2048)
-	for { // guest send to host
-		length, _, _ := client.ReadFromUDP(buffer)
-		server.WriteToUDP(buffer[:length], serverAddr)
+	for {
+		length, _, _ := host.ReadFromUDP(buffer)
+		guest.WriteToUDP(buffer[:length], guestAddr)
 	}
 }
-func transferHostTrafficToGuest(client *net.UDPConn, server *net.UDPConn, clientAddr *net.UDPAddr, serverAddr *net.UDPAddr, channel chan []byte) {
-	for { // host send to guest
+func transferGuestTrafficToHost(host *net.UDPConn, guest *net.UDPConn, hostAddr *net.UDPAddr, guestAddr *net.UDPAddr, channel chan []byte) {
+	for {
 		message := <-channel
-		client.WriteToUDP(message, clientAddr)
+		host.WriteToUDP(message, hostAddr)
 	}
 }
 func listenUDP(ws *websocket.Conn) {
-	server, err := net.ListenUDP("udp", nil)
+	guest, err := net.ListenUDP("udp", nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	serverChannelList := make(map[string]chan []byte)
+	guestChannelList := make(map[string]chan []byte)
 
-	reply := fmt.Sprintf("LISTEN %s:%d", IP, server.LocalAddr().(*net.UDPAddr).Port)
+	reply := fmt.Sprintf("LISTEN %s:%d", IP, guest.LocalAddr().(*net.UDPAddr).Port)
 	ws.Write([]byte(reply))
 	for {
 		message := make([]byte, 2048)
-		length, serverAddr, _ := server.ReadFromUDP(message)
-		channel, ok := serverChannelList[serverAddr.String()]
+		length, guestAddr, _ := guest.ReadFromUDP(message)
+		channel, ok := guestChannelList[guestAddr.String()]
 		if !ok {
-			client, err := net.ListenUDP("udp", nil)
+			host, err := net.ListenUDP("udp", nil)
 			if err != nil {
 				log.Println(err)
 				return
 			}
-			reply = fmt.Sprintf("CONNECT %s:%d", IP, client.LocalAddr().(*net.UDPAddr).Port)
+			reply = fmt.Sprintf("CONNECT %s:%d", IP, host.LocalAddr().(*net.UDPAddr).Port)
 			ws.Write([]byte(reply))
-			_, clientAddr, _ := client.ReadFromUDP(make([]byte, 2048))
-			reply = fmt.Sprintf("CONNECTED %s:%d", IP, client.LocalAddr().(*net.UDPAddr).Port)
+			_, hostAddr, _ := host.ReadFromUDP(make([]byte, 2048))
+			reply = fmt.Sprintf("CONNECTED %s:%d", IP, host.LocalAddr().(*net.UDPAddr).Port)
 			ws.Write([]byte(reply))
-			client.WriteToUDP(message[:length], clientAddr)
-			go transferGuestTrafficToHost(client, server, clientAddr, serverAddr) // guest send to host
+			host.WriteToUDP(message[:length], hostAddr)
+			go transferHostTrafficToGuest(host, guest, hostAddr, guestAddr)
 			channel := make(chan []byte)
-			serverChannelList[serverAddr.String()] = channel
-			go transferHostTrafficToGuest(client, server, clientAddr, serverAddr, channel) // host send to guest
+			guestChannelList[guestAddr.String()] = channel
+			go transferGuestTrafficToHost(host, guest, hostAddr, guestAddr, channel)
 		} else {
 			channel <- message[:length]
 		}
