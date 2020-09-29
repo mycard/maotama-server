@@ -10,18 +10,25 @@ WORKDIR /usr/src/app
 COPY ./main.go ./
 RUN go build -ldflags "-s -w -extldflags '-static'" -o maotama-server main.go
 
-FROM debian:buster-slim
+FROM node:buster-slim
 
 RUN apt update && \
-	apt -y install dnsutils && \
-	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+	env DEBIAN_FRONTEND=noninteractive apt -y install dnsutils cron tzdata && \
+	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+  cp -rf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+  echo "Asia/Shanghai" > /etc/timezone && \
+  npm -g install pm2 && \
+  ln -s /dev/stdout /var/log/cron.log && \
+  echo '*/5 * * * * /usr/local/bin/pm2 restart maotama-server' > /etc/cron.d/restart-maotama && \
+  crontab /etc/cron.d/restart-maotama
 
-COPY ./entrypoint.sh /
+COPY ./entrypoint.sh /data/
 COPY --from=builder /usr/src/app/maotama-server /usr/bin/
+COPY ./pm2.json /data/
 
 WORKDIR /data
 
 ENV TZ Asia/Shanghai
 
-ENTRYPOINT [ "/entrypoint.sh" ]
-CMD [ "/usr/bin/maotama-server" ]
+ENTRYPOINT [ "/data/entrypoint.sh" ]
+CMD [ "pm2-docker", "/data/pm2.json" ]

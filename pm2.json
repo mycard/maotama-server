@@ -1,0 +1,14 @@
+{
+  "apps": [
+    {
+      "name": "restart-cron",
+      "script": "/usr/sbin/cron",
+      "args": "-f"
+    },
+    {
+      "name": "maotama-server",
+      "script": "/usr/bin/maotama-server",
+      "cwd": "/data"
+    }
+  ]
+}
