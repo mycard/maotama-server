@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"golang.org/x/net/websocket"
 )
@@ -103,6 +104,11 @@ func UnpackData2(buf []byte) (addr *net.UDPAddr, data []byte) {
 func transferHostTrafficToGuest(host *net.UDPConn, guest *net.UDPConn, guestAddr *net.UDPAddr) {
 	buffer := make([]byte, 2048)
 	for {
+		derr := host.SetReadDeadline(time.Now().Add(2 * time.Minute))
+		if derr != nil {
+			log.Println("Guest deadline error: ", derr)
+			return
+		}
 		length, _, err := host.ReadFromUDP(buffer)
 		if err != nil {
 			log.Println("Host read error: ", err)
@@ -139,6 +145,11 @@ func listenUDP(ws *websocket.Conn) {
 	ws.Write([]byte(reply))
 	for {
 		message := make([]byte, 2048)
+		derr := guest.SetReadDeadline(time.Now().Add(2 * time.Minute))
+		if derr != nil {
+			log.Println("Guest deadline error: ", derr)
+			return
+		}
 		length, guestAddr, err := guest.ReadFromUDP(message)
 		channel, ok := guestChannelList[guestAddr.String()]
 		if err != nil {
@@ -155,7 +166,16 @@ func listenUDP(ws *websocket.Conn) {
 			}
 			reply = fmt.Sprintf("CONNECT %s:%d", IP, host.LocalAddr().(*net.UDPAddr).Port)
 			ws.Write([]byte(reply))
-			_, hostAddr, _ := host.ReadFromUDP(make([]byte, 2048))
+			derr := host.SetReadDeadline(time.Now().Add(2 * time.Minute))
+			if derr != nil {
+				log.Println("Knock deadline error: ", derr)
+				return
+			}
+			_, hostAddr, kerr := host.ReadFromUDP(make([]byte, 2048))
+			if kerr != nil {
+				log.Println("Host knock error: ", kerr)
+				return
+			}
 			reply = fmt.Sprintf("CONNECTED %s:%d", IP, host.LocalAddr().(*net.UDPAddr).Port)
 			ws.Write([]byte(reply))
 			host.WriteToUDP(message[:length], hostAddr)
