@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -13,6 +14,8 @@ import (
 )
 
 var IP = os.Getenv("ADDRESS")
+
+var IPinObject = net.ParseIP(IP)
 
 // funcs from shitama
 
@@ -41,67 +44,60 @@ func SockAddrToUDPAddr(buf []byte) *net.UDPAddr {
 
 }
 
-func PackData(addr *net.UDPAddr, data []byte) []byte {
+func translateGuestToHostPackets(data *([]byte), len int, list *(map[string]*net.UDPAddr)) {
+	if (*data)[0] == 0x1 {
+		if len < 34 {
+			return
+		}
+		if bytes.Compare((*data)[1:17], (*data)[17:33]) != 0 {
 
-	buf := make([]byte, len(data)+6)
+			src := SockAddrToUDPAddr((*data)[17:25])
+			dest := (*list)[src.String()]
 
-	copy(buf[:4], addr.IP[len(addr.IP)-4:])
-	binary.BigEndian.PutUint16(buf[4:6], uint16(addr.Port))
-	copy(buf[6:], data)
+			if dest != nil {
+				copy((*data)[17:], UDPAddrToSockAddr(dest))
+				log.Println("Translated g-to-h 0x1 packet success:", src.String(), dest.String())
+			} else {
+				log.Println("Translated g-to-h 0x1 packet failed:", src.String())
+			}
 
-	return buf
-
+		}
+	}
 }
 
-func UnpackData(buf []byte) (addr *net.UDPAddr, data []byte) {
+func translateHostToGuestPackets(data *([]byte), len int, list *(map[string]*net.UDPAddr)) {
+	if (*data)[0] == 0x8 {
+		len := int(binary.LittleEndian.Uint32((*data)[1:5]))
 
-	addr = new(net.UDPAddr)
-	addr.IP = make([]byte, 16)
-	addr.IP[10] = 255
-	addr.IP[11] = 255
-	copy(addr.IP[len(addr.IP)-4:], buf[:4])
-	addr.Port = int(binary.BigEndian.Uint16(buf[4:6]))
+		for i := 0; i < len; i++ {
 
-	data = make([]byte, len(buf)-6)
-	copy(data, buf[6:])
-	return addr, data
+			src := SockAddrToUDPAddr((*data)[5+i*16:])
+			dest := (*list)[src.String()]
 
+			if dest != nil {
+				copy((*data)[5+i*16:], UDPAddrToSockAddr(dest))
+				log.Println("Translated h-to-g 0x8 packet success:", src.String(), dest.String())
+			} else {
+				log.Println("Translated h-to-g 0x8 packet failed:", src.String())
+			}
+
+		}
+	}
+	if (*data)[0] == 0x2 {
+
+		src := SockAddrToUDPAddr((*data)[1:])
+		dest := (*list)[src.String()]
+
+		if dest != nil {
+			copy((*data)[1:], UDPAddrToSockAddr(dest))
+			log.Println("Translated h-to-g 0x2 packet success:", src.String(), dest.String())
+		} else {
+			log.Println("Translated h-to-g 0x2 packet failed:", src.String())
+		}
+	}
 }
 
-func UDPAddrToSockAddr2(addr *net.UDPAddr, outBuf []byte) []byte {
-
-	binary.BigEndian.PutUint16(outBuf[:2], 0x200)
-	binary.BigEndian.PutUint16(outBuf[2:4], uint16(addr.Port))
-	copy(outBuf[4:8], addr.IP[len(addr.IP)-4:])
-
-	return outBuf
-
-}
-
-func PackData2(addr *net.UDPAddr, data []byte, outBuf []byte) []byte {
-
-	copy(outBuf[:4], addr.IP[len(addr.IP)-4:])
-	binary.BigEndian.PutUint16(outBuf[4:6], uint16(addr.Port))
-	copy(outBuf[6:], data)
-
-	return outBuf
-
-}
-
-func UnpackData2(buf []byte) (addr *net.UDPAddr, data []byte) {
-
-	addr = new(net.UDPAddr)
-	addr.IP = make([]byte, 16)
-	addr.IP[10] = 255
-	addr.IP[11] = 255
-	copy(addr.IP[len(addr.IP)-4:], buf[:4])
-	addr.Port = int(binary.BigEndian.Uint16(buf[4:6]))
-
-	return addr, buf[6:]
-
-}
-
-func transferHostTrafficToGuest(host *net.UDPConn, guest *net.UDPConn, guestAddr *net.UDPAddr) {
+func transferHostTrafficToGuest(host *net.UDPConn, guest *net.UDPConn, guestAddr *net.UDPAddr, htogAddressTranslateList *(map[string]*net.UDPAddr), hostRemoteAddr *net.UDPAddr) {
 	buffer := make([]byte, 2048)
 	for {
 		derr := host.SetReadDeadline(time.Now().Add(2 * time.Minute))
@@ -116,8 +112,9 @@ func transferHostTrafficToGuest(host *net.UDPConn, guest *net.UDPConn, guestAddr
 		}
 		guest.WriteToUDP(buffer[:length], guestAddr)
 	}
+	(*htogAddressTranslateList)[hostRemoteAddr.String()] = nil
 }
-func transferGuestTrafficToHost(host *net.UDPConn, hostAddr *net.UDPAddr, guestAddr *net.UDPAddr, channel chan GuestToHostMessage, plist *(map[string]chan GuestToHostMessage)) {
+func transferGuestTrafficToHost(host *net.UDPConn, hostAddr *net.UDPAddr, guestAddr *net.UDPAddr, channel chan GuestToHostMessage, plist *(map[string]chan GuestToHostMessage), gtohAddressTranslateList *(map[string]*net.UDPAddr)) {
 	for {
 		exit := false
 		select {
@@ -138,6 +135,7 @@ func transferGuestTrafficToHost(host *net.UDPConn, hostAddr *net.UDPAddr, guestA
 		}
 	}
 	(*plist)[guestAddr.String()] = nil
+	(*gtohAddressTranslateList)[guestAddr.String()] = nil
 }
 
 type GuestToHostMessage struct {
@@ -152,6 +150,8 @@ func listenUDP(ws *websocket.Conn) {
 		return
 	}
 	guestChannelList := make(map[string]chan GuestToHostMessage)
+	htogAddressTranslateList := make(map[string]*net.UDPAddr)
+	gtohAddressTranslateList := make(map[string]*net.UDPAddr)
 
 	reply := fmt.Sprintf("LISTEN %s:%d", IP, guest.LocalAddr().(*net.UDPAddr).Port)
 	ws.Write([]byte(reply))
@@ -189,10 +189,18 @@ func listenUDP(ws *websocket.Conn) {
 			reply = fmt.Sprintf("CONNECTED %s:%d", IP, host.LocalAddr().(*net.UDPAddr).Port)
 			ws.Write([]byte(reply))
 			host.WriteToUDP(message[:length], hostAddr)
-			go transferHostTrafficToGuest(host, guest, guestAddr)
+
+			hostRemoteAddr := new(net.UDPAddr)
+			hostRemoteAddr.IP = IPinObject
+			hostRemoteAddr.Port = host.LocalAddr().(*net.UDPAddr).Port
+
+			htogAddressTranslateList[hostRemoteAddr.String()] = guestAddr
+			gtohAddressTranslateList[guestAddr.String()] = hostRemoteAddr
+
+			go transferHostTrafficToGuest(host, guest, guestAddr, &htogAddressTranslateList, hostRemoteAddr)
 			channel := make(chan GuestToHostMessage)
 			guestChannelList[guestAddr.String()] = channel
-			go transferGuestTrafficToHost(host, hostAddr, guestAddr, channel, &guestChannelList)
+			go transferGuestTrafficToHost(host, hostAddr, guestAddr, channel, &guestChannelList, &gtohAddressTranslateList)
 		} else {
 			msg := GuestToHostMessage{data: message[:length], exit: false}
 			channel <- msg
