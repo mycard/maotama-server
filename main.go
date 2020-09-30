@@ -56,9 +56,9 @@ func translateGuestToHostPackets(data *([]byte), len int, list *(map[string]*net
 
 			if dest != nil {
 				copy((*data)[17:], UDPAddrToSockAddr(dest))
-				log.Println("Translated g-to-h 0x1 packet success:", src.String(), dest.String())
+				log.Println("Translate g-to-h 0x1 packet success:", src.String(), dest.String())
 			} else {
-				log.Println("Translated g-to-h 0x1 packet failed:", src.String())
+				log.Println("Translate g-to-h 0x1 packet failed:", src.String())
 			}
 
 		}
@@ -76,9 +76,9 @@ func translateHostToGuestPackets(data *([]byte), len int, list *(map[string]*net
 
 			if dest != nil {
 				copy((*data)[5+i*16:], UDPAddrToSockAddr(dest))
-				log.Println("Translated h-to-g 0x8 packet success:", src.String(), dest.String())
+				log.Println("Translate h-to-g 0x8 packet success:", src.String(), dest.String())
 			} else {
-				log.Println("Translated h-to-g 0x8 packet failed:", src.String())
+				log.Println("Translate h-to-g 0x8 packet failed:", src.String())
 			}
 
 		}
@@ -90,9 +90,9 @@ func translateHostToGuestPackets(data *([]byte), len int, list *(map[string]*net
 
 		if dest != nil {
 			copy((*data)[1:], UDPAddrToSockAddr(dest))
-			log.Println("Translated h-to-g 0x2 packet success:", src.String(), dest.String())
+			log.Println("Translate h-to-g 0x2 packet success:", src.String(), dest.String())
 		} else {
-			log.Println("Translated h-to-g 0x2 packet failed:", src.String())
+			log.Println("Translate h-to-g 0x2 packet failed:", src.String())
 		}
 	}
 }
