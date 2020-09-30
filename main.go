@@ -100,37 +100,57 @@ func UnpackData2(buf []byte) (addr *net.UDPAddr, data []byte) {
 
 }
 
-func transferHostTrafficToGuest(host *net.UDPConn, guest *net.UDPConn, hostAddr *net.UDPAddr, guestAddr *net.UDPAddr) {
+func transferHostTrafficToGuest(host *net.UDPConn, guest *net.UDPConn, guestAddr *net.UDPAddr) {
 	buffer := make([]byte, 2048)
 	for {
-		length, _, _ := host.ReadFromUDP(buffer)
+		length, _, err := host.ReadFromUDP(buffer)
+		if err != nil {
+			log.Println("Host read error: ", err)
+			break
+		}
 		guest.WriteToUDP(buffer[:length], guestAddr)
 	}
 }
-func transferGuestTrafficToHost(host *net.UDPConn, guest *net.UDPConn, hostAddr *net.UDPAddr, guestAddr *net.UDPAddr, channel chan []byte) {
+func transferGuestTrafficToHost(host *net.UDPConn, hostAddr *net.UDPAddr, channel chan GuestToHostMessage) {
 	for {
 		message := <-channel
-		host.WriteToUDP(message, hostAddr)
+		if message.exit {
+			break
+		} else {
+			host.WriteToUDP(message.data, hostAddr)
+		}
 	}
 }
+
+type GuestToHostMessage struct {
+	exit bool
+	data []byte
+}
+
 func listenUDP(ws *websocket.Conn) {
 	guest, err := net.ListenUDP("udp", nil)
 	if err != nil {
-		log.Println(err)
+		log.Println("Guest listen error: ", err)
 		return
 	}
-	guestChannelList := make(map[string]chan []byte)
+	guestChannelList := make(map[string]chan GuestToHostMessage)
 
 	reply := fmt.Sprintf("LISTEN %s:%d", IP, guest.LocalAddr().(*net.UDPAddr).Port)
 	ws.Write([]byte(reply))
 	for {
 		message := make([]byte, 2048)
-		length, guestAddr, _ := guest.ReadFromUDP(message)
+		length, guestAddr, err := guest.ReadFromUDP(message)
 		channel, ok := guestChannelList[guestAddr.String()]
-		if !ok {
+		if err != nil {
+			log.Println("Guest read error: ", err)
+			if ok {
+				channel <- GuestToHostMessage{data: nil, exit: true}
+				guestChannelList[guestAddr.String()] = nil
+			}
+		} else if !ok {
 			host, err := net.ListenUDP("udp", nil)
 			if err != nil {
-				log.Println(err)
+				log.Println("Host listen error: ", err)
 				return
 			}
 			reply = fmt.Sprintf("CONNECT %s:%d", IP, host.LocalAddr().(*net.UDPAddr).Port)
@@ -139,12 +159,13 @@ func listenUDP(ws *websocket.Conn) {
 			reply = fmt.Sprintf("CONNECTED %s:%d", IP, host.LocalAddr().(*net.UDPAddr).Port)
 			ws.Write([]byte(reply))
 			host.WriteToUDP(message[:length], hostAddr)
-			go transferHostTrafficToGuest(host, guest, hostAddr, guestAddr)
-			channel := make(chan []byte)
+			go transferHostTrafficToGuest(host, guest, guestAddr)
+			channel := make(chan GuestToHostMessage)
 			guestChannelList[guestAddr.String()] = channel
-			go transferGuestTrafficToHost(host, guest, hostAddr, guestAddr, channel)
+			go transferGuestTrafficToHost(host, hostAddr, channel)
 		} else {
-			channel <- message[:length]
+			msg := GuestToHostMessage{data: message[:length], exit: false}
+			channel <- msg
 		}
 	}
 
