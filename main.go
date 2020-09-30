@@ -157,19 +157,15 @@ func listenUDP(ws *websocket.Conn) {
 	ws.Write([]byte(reply))
 	for {
 		message := make([]byte, 2048)
-		/*derr := guest.SetReadDeadline(time.Now().Add(2 * time.Minute))
+		derr := guest.SetReadDeadline(time.Now().Add(10 * time.Minute))
 		if derr != nil {
-			log.Println("Guest deadline error: ", derr)
+			log.Println("Guest deadline error: ", guest.LocalAddr().(*net.UDPAddr).Port, derr)
 			return
-		}*/
+		}
 		length, guestAddr, err := guest.ReadFromUDP(message)
 		if err != nil {
-			log.Println("Guest read error: ", err)
-			/*if ok {
-				channel <- GuestToHostMessage{data: nil, exit: true}
-				guestChannelList[guestAddr.String()] = nil
-			}*/
-			continue
+			log.Println("Guest read error: ", guest.LocalAddr().(*net.UDPAddr).Port, err)
+			return
 		}
 		channel, ok := guestChannelList[guestAddr.String()]
 		if !ok {
