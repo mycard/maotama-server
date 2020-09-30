@@ -126,7 +126,7 @@ func transferGuestTrafficToHost(host *net.UDPConn, hostAddr *net.UDPAddr, guestA
 				break
 			} else {
 				data := message.data
-				translateHostToGuestPackets(&data, message.length, gtohAddressTranslateList)
+				translateGuestToHostPackets(&data, message.length, gtohAddressTranslateList)
 				host.WriteToUDP(data, hostAddr)
 			}
 		case <-time.After(time.Duration(2) * time.Minute):
