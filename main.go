@@ -202,6 +202,8 @@ func listenUDP(ws *websocket.Conn) {
 			htogAddressTranslateList[hostRemoteAddr.String()] = guestAddr
 			gtohAddressTranslateList[guestAddr.String()] = hostRemoteAddr
 
+			log.Println("Address map:", hostRemoteAddr.String(), guestAddr.String())
+
 			go transferHostTrafficToGuest(host, guest, guestAddr, &htogAddressTranslateList, hostRemoteAddr)
 			channel := make(chan GuestToHostMessage)
 			guestChannelList[guestAddr.String()] = channel
