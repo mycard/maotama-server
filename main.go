@@ -106,26 +106,38 @@ func transferHostTrafficToGuest(host *net.UDPConn, guest *net.UDPConn, guestAddr
 	for {
 		derr := host.SetReadDeadline(time.Now().Add(2 * time.Minute))
 		if derr != nil {
-			log.Println("Guest deadline error: ", derr)
-			return
+			log.Println("Host deadline error: ", guestAddr.String(), derr)
+			break
 		}
 		length, _, err := host.ReadFromUDP(buffer)
 		if err != nil {
-			log.Println("Host read error: ", err)
+			log.Println("Host read error: ", guestAddr.String(), err)
 			break
 		}
 		guest.WriteToUDP(buffer[:length], guestAddr)
 	}
 }
-func transferGuestTrafficToHost(host *net.UDPConn, hostAddr *net.UDPAddr, channel chan GuestToHostMessage) {
+func transferGuestTrafficToHost(host *net.UDPConn, hostAddr *net.UDPAddr, guestAddr *net.UDPAddr, channel chan GuestToHostMessage, plist *(map[string]chan GuestToHostMessage)) {
 	for {
-		message := <-channel
-		if message.exit {
+		exit := false
+		select {
+		case message := <-channel:
+			if message.exit {
+				exit = true
+				break
+			} else {
+				host.WriteToUDP(message.data, hostAddr)
+			}
+		case <-time.After(time.Duration(2) * time.Minute):
+			log.Println("Guest timeout: ", guestAddr.String(), hostAddr.String())
+			exit = true
 			break
-		} else {
-			host.WriteToUDP(message.data, hostAddr)
+		}
+		if exit {
+			break
 		}
 	}
+	(*plist)[guestAddr.String()] = nil
 }
 
 type GuestToHostMessage struct {
@@ -145,20 +157,22 @@ func listenUDP(ws *websocket.Conn) {
 	ws.Write([]byte(reply))
 	for {
 		message := make([]byte, 2048)
-		derr := guest.SetReadDeadline(time.Now().Add(2 * time.Minute))
+		/*derr := guest.SetReadDeadline(time.Now().Add(2 * time.Minute))
 		if derr != nil {
 			log.Println("Guest deadline error: ", derr)
 			return
-		}
+		}*/
 		length, guestAddr, err := guest.ReadFromUDP(message)
-		channel, ok := guestChannelList[guestAddr.String()]
 		if err != nil {
 			log.Println("Guest read error: ", err)
-			if ok {
+			/*if ok {
 				channel <- GuestToHostMessage{data: nil, exit: true}
 				guestChannelList[guestAddr.String()] = nil
-			}
-		} else if !ok {
+			}*/
+			continue
+		}
+		channel, ok := guestChannelList[guestAddr.String()]
+		if !ok {
 			host, err := net.ListenUDP("udp", nil)
 			if err != nil {
 				log.Println("Host listen error: ", err)
@@ -168,12 +182,12 @@ func listenUDP(ws *websocket.Conn) {
 			ws.Write([]byte(reply))
 			derr := host.SetReadDeadline(time.Now().Add(2 * time.Minute))
 			if derr != nil {
-				log.Println("Knock deadline error: ", derr)
+				log.Println("Knock deadline error: ", host.LocalAddr().(*net.UDPAddr).Port, derr)
 				return
 			}
 			_, hostAddr, kerr := host.ReadFromUDP(make([]byte, 2048))
 			if kerr != nil {
-				log.Println("Host knock error: ", kerr)
+				log.Println("Host knock error: ", host.LocalAddr().(*net.UDPAddr).Port, kerr)
 				return
 			}
 			reply = fmt.Sprintf("CONNECTED %s:%d", IP, host.LocalAddr().(*net.UDPAddr).Port)
@@ -182,7 +196,7 @@ func listenUDP(ws *websocket.Conn) {
 			go transferHostTrafficToGuest(host, guest, guestAddr)
 			channel := make(chan GuestToHostMessage)
 			guestChannelList[guestAddr.String()] = channel
-			go transferGuestTrafficToHost(host, hostAddr, channel)
+			go transferGuestTrafficToHost(host, hostAddr, guestAddr, channel, &guestChannelList)
 		} else {
 			msg := GuestToHostMessage{data: message[:length], exit: false}
 			channel <- msg
