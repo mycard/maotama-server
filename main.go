@@ -110,7 +110,9 @@ func transferHostTrafficToGuest(host *net.UDPConn, guest *net.UDPConn, guestAddr
 			log.Println("Host read error: ", guestAddr.String(), err)
 			break
 		}
-		guest.WriteToUDP(buffer[:length], guestAddr)
+		data := buffer[:length]
+		translateHostToGuestPackets(&data, length, htogAddressTranslateList)
+		guest.WriteToUDP(data, guestAddr)
 	}
 	(*htogAddressTranslateList)[hostRemoteAddr.String()] = nil
 }
@@ -123,7 +125,9 @@ func transferGuestTrafficToHost(host *net.UDPConn, hostAddr *net.UDPAddr, guestA
 				exit = true
 				break
 			} else {
-				host.WriteToUDP(message.data, hostAddr)
+				data := message.data
+				translateHostToGuestPackets(&data, message.length, gtohAddressTranslateList)
+				host.WriteToUDP(data, hostAddr)
 			}
 		case <-time.After(time.Duration(2) * time.Minute):
 			log.Println("Guest timeout: ", guestAddr.String(), hostAddr.String())
@@ -139,8 +143,9 @@ func transferGuestTrafficToHost(host *net.UDPConn, hostAddr *net.UDPAddr, guestA
 }
 
 type GuestToHostMessage struct {
-	exit bool
-	data []byte
+	exit   bool
+	data   []byte
+	length int
 }
 
 func listenUDP(ws *websocket.Conn) {
@@ -202,7 +207,7 @@ func listenUDP(ws *websocket.Conn) {
 			guestChannelList[guestAddr.String()] = channel
 			go transferGuestTrafficToHost(host, hostAddr, guestAddr, channel, &guestChannelList, &gtohAddressTranslateList)
 		} else {
-			msg := GuestToHostMessage{data: message[:length], exit: false}
+			msg := GuestToHostMessage{data: message[:length], length: length, exit: false}
 			channel <- msg
 		}
 	}
