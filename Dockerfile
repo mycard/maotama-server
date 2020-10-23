@@ -19,7 +19,7 @@ RUN apt update && \
   echo "Asia/Shanghai" > /etc/timezone && \
   npm -g install pm2 && \
   ln -s /dev/stdout /var/log/cron.log && \
-  echo '*/5 * * * * /usr/local/bin/pm2 restart maotama-server' > /etc/cron.d/restart-maotama && \
+  echo '0 3 * * * /usr/local/bin/pm2 restart maotama-server' > /etc/cron.d/restart-maotama && \
   crontab /etc/cron.d/restart-maotama
 
 COPY ./entrypoint.sh /data/
